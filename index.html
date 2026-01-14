@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+
+<title>BCTV Ultimate</title>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;background:#000;color:#eee;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto;
+  display:flex;flex-direction:column;height:100vh;overflow:hidden
+}
+header{padding:14px 16px;display:flex;gap:10px;background:#111}
+header h1{margin:0;font-size:24px;font-weight:800}
+.badge{background:#1faa00;color:#000;padding:8px 8px;border-radius:4px;font-size:11px;font-weight:800}
+nav{display:flex;border-bottom:1px solid #222}
+nav button{flex:1;padding:16px;background:none;border:none;color:#666;font-weight:600}
+nav button.active{color:#fff;border-bottom:3px solid #e50914}
+main{flex:1;overflow-y:auto;padding:10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
+
+.category-bar{
+  display:flex;
+  gap:6px;
+  margin-bottom:10px;
+  overflow-x:auto
+}
+.category-bar button{
+  padding:6px 12px;
+  background:#1a1a1a;
+  border:1px solid #333;
+  color:#ccc;
+  border-radius:6px;
+  white-space:nowrap
+}
+.category-bar button.active{
+  background:#e50914;
+  color:#fff;
+  border-color:#e50914
+}
+
+.card{
+  background:#161616;border:1px solid #222;border-radius:8px;
+  padding:12px;text-align:center;cursor:pointer;height:100px;
+  display:flex;flex-direction:column;justify-content:center
+}
+.card span{font-size:32px}
+.card div{font-size:13px;color:#ccc}
+#playerOverlay{position:fixed;inset:0;background:#000;z-index:9999;display:none;flex-direction:column}
+#playerHeader{padding:12px;display:flex;justify-content:space-between}
+#playerControls button{padding:8px 14px;font-weight:700}
+#playerBody{flex:1;position:relative}
+video{width:100%;height:100%;object-fit:contain;background:#000}
+</style>
+</head>
+
+<body>
+
+<header>
+  <h1><span style="color:#e50914">BC</span>TV</h1>
+  <div class="badge">FIT FIT TESLA TV</div>
+</header>
+
+<nav>
+  <button class="active" onclick="showTab('national')">Ulusal</button>
+  <button onclick="showTab('iptv')">IPTV</button>
+</nav>
+
+<main>
+  <div id="national" class="grid"></div>
+
+  <div id="iptv" style="display:none">
+    <div id="categoryBar" class="category-bar"></div>
+    <div id="iptvGrid" class="grid"></div>
+  </div>
+</main>
+
+<div id="playerOverlay">
+  <div id="playerHeader">
+    <div></div>
+    <div id="playerControls">
+      <button onclick="closePlayer()">KAPAT</button>
+    </div>
+  </div>
+  <div id="playerBody"></div>
+</div>
+
+<script>
+/* ===============================
+   ULUSAL KANALLAR (AYNI)
+================================ */
+const NATIONAL_CHANNELS = [
+  {name:"Now TV",icon:"🦊",url:"http://116.202.238.88/FOXTV_TR/index.m3u8"},
+  {name:"Star TV",icon:"⭐",url:"https://raw.githubusercontent.com/ipstreet312/freeiptv/refs/heads/master/ressources/tur/star.m3u8"},
+  {name:"ATV",icon:"🟠",url:"http://116.202.238.88/ATV_TR/tracks-v1a1/index.m3u8"},
+  {name:"Halk TV",icon:"📢",url:"https://halktv-live.daioncdn.net/halktv/halktv.m3u8"},
+  {name:"NTV",icon:"🗞️",url:"http://dygvideo.dygdigital.com/live/hls/ntv4puhu?m3u8"},
+  {name:"TRT 1",icon:"📺",url:"https://tv-trt1.medya.trt.com.tr/master.m3u8"},
+  {name:"TRT Haber",icon:"🏛️",url:"https://tv-trthaber.medya.trt.com.tr/master.m3u8"},
+  {name:"Habertürk",icon:"📡",url:"https://tv.ensonhaber.com/haberturk/haberturk.m3u8"}
+];
+
+/* ===============================
+   IPTV – EXTINF AYNI
+================================ */
+const IPTV_M3U_RAW = `
+#EXTM3U
+#EXTINF:-1 tvg-ID="alfaiptv" user-agent="okhttp/4.10.0" tvg-name="Alfa IPTV Server" group-title="TR: Spor",Alfa IPTV Server
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/1.m3u8
+#EXTINF:-1 tvg-ID="efef0ea19b7b6a76335a7fdd979788de" user-agent="okhttp/4.10.0" tvg-name="SD: beIN Sports 1" group-title="TR: Spor",SD: beIN Sports 1
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/2.m3u8
+#EXTINF:-1 tvg-ID="9472cf7603f5177a6d4a25480e8735e3" user-agent="okhttp/4.10.0" tvg-name="SD: beIN Sports 2" group-title="TR: Spor",SD: beIN Sports 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/3.m3u8
+#EXTINF:-1 tvg-ID="79c38c00f6cd5ffdfe5d28cac600e987" user-agent="okhttp/4.10.0" tvg-name="SD: beIN Sports 3" group-title="TR: Spor",SD: beIN Sports 3
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/4.m3u8
+#EXTINF:-1 tvg-ID="ffb8dba4c4d25f5cc46415b3cabd2eb3" user-agent="okhttp/4.10.0" tvg-name="SD: beIN Sports 4" group-title="TR: Spor",SD: beIN Sports 4
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/5.m3u8
+#EXTINF:-1 tvg-ID="c4d538e1b764e32af7865a28419e554f" user-agent="okhttp/4.10.0" tvg-name="SD: beIN Sports 5" group-title="TR: Spor",SD: beIN Sports 5
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/68627.m3u8
+#EXTINF:-1 tvg-ID="1c828f444bec6ace46d8aaa3966f1775" user-agent="okhttp/4.10.0" tvg-name="SD: beIN Sports MAX 1" group-title="TR: Spor",SD: beIN Sports MAX 1
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/6.m3u8
+#EXTINF:-1 tvg-ID="6221aa6f1455d44f90b6976f7ae5d612" user-agent="okhttp/4.10.0" tvg-name="SD: beIN Sports MAX 2" group-title="TR: Spor",SD: beIN Sports MAX 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/7.m3u8
+#EXTINF:-1 tvg-ID="efef0ea19b7b6a76335a7fdd979788de" user-agent="okhttp/4.10.0" tvg-name="HD: beIN Sports 1" group-title="TR: Spor",HD: beIN Sports 1
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/9.m3u8
+#EXTINF:-1 tvg-ID="9472cf7603f5177a6d4a25480e8735e3" user-agent="okhttp/4.10.0" tvg-name="HD: beIN Sports 2" group-title="TR: Spor",HD: beIN Sports 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/10.m3u8
+#EXTINF:-1 tvg-ID="79c38c00f6cd5ffdfe5d28cac600e987" user-agent="okhttp/4.10.0" tvg-name="HD: beIN Sports 3" group-title="TR: Spor",HD: beIN Sports 3
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/11.m3u8
+#EXTINF:-1 tvg-ID="ffb8dba4c4d25f5cc46415b3cabd2eb3" user-agent="okhttp/4.10.0" tvg-name="HD: beIN Sports 4" group-title="TR: Spor",HD: beIN Sports 4
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/12.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="HD: beIN Sports 5" group-title="TR: Spor",HD: beIN Sports 5
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/68628.m3u8
+#EXTINF:-1 tvg-ID="1c828f444bec6ace46d8aaa3966f1775" user-agent="okhttp/4.10.0" tvg-name="HD: beIN Sports MAX 1" group-title="TR: Spor",HD: beIN Sports MAX 1
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/13.m3u8
+#EXTINF:-1 tvg-ID="6221aa6f1455d44f90b6976f7ae5d612" user-agent="okhttp/4.10.0" tvg-name="HD: beIN Sports MAX 2" group-title="TR: Spor",HD: beIN Sports MAX 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/14.m3u8
+#EXTINF:-1 tvg-ID="efef0ea19b7b6a76335a7fdd979788de" user-agent="okhttp/4.10.0" tvg-name="Full HD: beIN Sports 1" group-title="TR: Spor",Full HD: beIN Sports 1
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/16.m3u8
+#EXTINF:-1 tvg-ID="9472cf7603f5177a6d4a25480e8735e3" user-agent="okhttp/4.10.0" tvg-name="Full HD: beIN Sports 2" group-title="TR: Spor",Full HD: beIN Sports 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/17.m3u8
+#EXTINF:-1 tvg-ID="79c38c00f6cd5ffdfe5d28cac600e987" user-agent="okhttp/4.10.0" tvg-name="Full HD: beIN Sports 3" group-title="TR: Spor",Full HD: beIN Sports 3
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/18.m3u8
+#EXTINF:-1 tvg-ID="ffb8dba4c4d25f5cc46415b3cabd2eb3" user-agent="okhttp/4.10.0" tvg-name="Full HD: beIN Sports 4" group-title="TR: Spor",Full HD: beIN Sports 4
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/19.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="Full HD: beIN Sports 5" group-title="TR: Spor",Full HD: beIN Sports 5
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/68629.m3u8
+#EXTINF:-1 tvg-ID="1c828f444bec6ace46d8aaa3966f1775" user-agent="okhttp/4.10.0" tvg-name="Full HD: beIN Sports MAX 1" group-title="TR: Spor",Full HD: beIN Sports MAX 1
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/20.m3u8
+#EXTINF:-1 tvg-ID="6221aa6f1455d44f90b6976f7ae5d612" user-agent="okhttp/4.10.0" tvg-name="Full HD: beIN Sports MAX 2" group-title="TR: Spor",Full HD: beIN Sports MAX 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/21.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="4K: beIN Sports 1" group-title="TR: Spor",4K: beIN Sports 1
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/91015.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="Mobile: beIN Sports 1" group-title="TR: Spor",Mobile: beIN Sports 1
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/94978.m3u8
+#EXTINF:-1 tvg-ID="54efd880b0d7a3a8c0026651b1c60f2c" user-agent="okhttp/4.10.0" tvg-name="TR: S Sport 1" group-title="TR: Spor",TR: S Sport 1
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/47.m3u8
+#EXTINF:-1 tvg-ID="3e80a3f3f251e72da2e6247eea1fb6c8" user-agent="okhttp/4.10.0" tvg-name="TR: S Sport 2" group-title="TR: Spor",TR: S Sport 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/50.m3u8
+#EXTINF:-1 tvg-ID="4fa5cb5cf46dd23c83a45308cf3d5870" user-agent="okhttp/4.10.0" tvg-name="TR: TV8.5" group-title="TR: Spor",TR: TV8.5
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/73.m3u8
+#EXTINF:-1 tvg-ID="fad9d8382dde21db2ad7c74b9ea957ed" user-agent="okhttp/4.10.0" tvg-name="TR: NBA TV" group-title="TR: Spor",TR: NBA TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/55.m3u8
+#EXTINF:-1 tvg-ID="4642af4cac79d783dfa6e0ba45c0405a" user-agent="okhttp/4.10.0" tvg-name="TR: Spor Smart 1" group-title="TR: Spor",TR: Spor Smart 1
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/43.m3u8
+#EXTINF:-1 tvg-ID="52f9866155cc12dd93220977cc0aa5fc" user-agent="okhttp/4.10.0" tvg-name="TR: Spor Smart 2" group-title="TR: Spor",TR: Spor Smart 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/45.m3u8
+#EXTINF:-1 tvg-ID="31728da75922148a771a4e1b3535f8bd" user-agent="okhttp/4.10.0" tvg-name="TR: Tivibu Spor 1" group-title="TR: Spor",TR: Tivibu Spor 1
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/36.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Tivibu Spor 2" group-title="TR: Spor",TR: Tivibu Spor 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/37.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Tivibu Spor 3" group-title="TR: Spor",TR: Tivibu Spor 3
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/38.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Tivibu Spor 4" group-title="TR: Spor",TR: Tivibu Spor 4
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/39.m3u8
+#EXTINF:-1 tvg-ID="a4f3e253b3459b2d960d86fb96c46bbb" user-agent="okhttp/4.10.0" tvg-name="TR: Eurosport 1" group-title="TR: Spor",TR: Eurosport 1
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/40.m3u8
+#EXTINF:-1 tvg-ID="bc91e09f0cc76a06f0145d83879a7cc6" user-agent="okhttp/4.10.0" tvg-name="TR: Eurosport 2" group-title="TR: Spor",TR: Eurosport 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/41.m3u8
+#EXTINF:-1 tvg-ID="2d8b2af3693214d805edc509ef9a0caa" user-agent="okhttp/4.10.0" tvg-name="TR: Cosmo Sports" group-title="TR: Spor",TR: Cosmo Sports
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82707.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Fight Network" group-title="TR: Spor",TR: Fight Network
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/59.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: W-Sport" group-title="TR: Spor",TR: W-Sport
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82709.m3u8
+#EXTINF:-1 tvg-ID="8fb123f4e1d846f8c05d3118bfb16d6e" user-agent="okhttp/4.10.0" tvg-name="TR: A Spor" group-title="TR: Spor",TR: A Spor
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/56.m3u8
+#EXTINF:-1 tvg-ID="29b8292890bf32e3e37f0cff141786f9" user-agent="okhttp/4.10.0" tvg-name="TR: HTSpor" group-title="TR: Spor",TR: HTSpor
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/86042.m3u8
+#EXTINF:-1 tvg-ID="cffde168be2d13548010297c4206e4ae" user-agent="okhttp/4.10.0" tvg-name="TR: TRT Spor" group-title="TR: Spor",TR: TRT Spor
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/57.m3u8
+#EXTINF:-1 tvg-ID="007fb54ecc87427206d661031f36f195" user-agent="okhttp/4.10.0" tvg-name="TR: TRT 3 Spor" group-title="TR: Spor",TR: TRT 3 Spor
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/28745.m3u8
+#EXTINF:-1 tvg-ID="2f2459a13975d94cd94720257a052ae1" user-agent="okhttp/4.10.0" tvg-name="TR: TRT Spor Yildiz HD" group-title="TR: Spor",TR: TRT Spor Yildiz HD
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/58.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: TAY TV" group-title="TR: Spor",TR: TAY TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/62.m3u8
+#EXTINF:-1 tvg-ID="ef9093ec190c798042adb17f74860f30" user-agent="okhttp/4.10.0" tvg-name="TR: TJK TV" group-title="TR: Spor",TR: TJK TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82710.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: FB TV" group-title="TR: Spor",TR: FB TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/63.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Sports TV" group-title="TR: Spor",TR: Sports TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/65.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Redbull Tv" group-title="TR: Spor",TR: Redbull Tv
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/93677.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: 0 Sifir TV" group-title="TR: Spor",TR: 0 Sifir TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/94958.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Ekol Sports" group-title="TR: Spor",TR: Ekol Sports
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/93676.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: beIN Sports Haber" group-title="TR: Spor",TR: beIN Sports Haber
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/8.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: S Sport Plus 1" group-title="TR: Spor",TR: S Sport Plus 1
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/52.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: S Sport Plus 2" group-title="TR: Spor",TR: S Sport Plus 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/53.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: S Sport Plus 3" group-title="TR: Spor",TR: S Sport Plus 3
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/54.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: S Sport Plus 4" group-title="TR: Spor",TR: S Sport Plus 4
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/28416.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: S Sport Plus 5" group-title="TR: Spor",TR: S Sport Plus 5
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/28417.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: S Sport Plus 6" group-title="TR: Spor",TR: S Sport Plus 6
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/28418.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: S Sport Plus 7" group-title="TR: Spor",TR: S Sport Plus 7
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/94959.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: S Sport Plus 8" group-title="TR: Spor",TR: S Sport Plus 8
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/94960.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Tabii Spor" group-title="TR: Spor",TR: Tabii Spor
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/86019.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Tabii Spor 1" group-title="TR: Spor",TR: Tabii Spor 1
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/85448.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Tabii Spor 2" group-title="TR: Spor",TR: Tabii Spor 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/85449.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Tabii Spor 3" group-title="TR: Spor",TR: Tabii Spor 3
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/85450.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Tabii Spor 4" group-title="TR: Spor",TR: Tabii Spor 4
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/86016.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Tabii Spor 5" group-title="TR: Spor",TR: Tabii Spor 5
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/86017.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Tabii  Spor 6" group-title="TR: Spor",TR: Tabii  Spor 6
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/86018.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: beIN Connect 1" group-title="TR: Spor",TR: beIN Connect 1
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/93720.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: beIN Connect 2" group-title="TR: Spor",TR: beIN Connect 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/93721.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: beIN Connect 3" group-title="TR: Spor",TR: beIN Connect 3
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/93722.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: beIN Connect 4" group-title="TR: Spor",TR: beIN Connect 4
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/93723.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: beIN Connect 5" group-title="TR: Spor",TR: beIN Connect 5
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/93724.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: beIN Connect 6" group-title="TR: Spor",TR: beIN Connect 6
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/93725.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: beIN Connect 7" group-title="TR: Spor",TR: beIN Connect 7
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/93726.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: beIN Connect 8" group-title="TR: Spor",TR: beIN Connect 8
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/93727.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: beIN Connect 9" group-title="TR: Spor",TR: beIN Connect 9
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/93728.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Exxen Sports 1" group-title="TR: Spor",TR: Exxen Sports 1
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/705.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Exxen Sports 2" group-title="TR: Spor",TR: Exxen Sports 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/1530.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Exxen Sports 3" group-title="TR: Spor",TR: Exxen Sports 3
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/1531.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Exxen Sports 4" group-title="TR: Spor",TR: Exxen Sports 4
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/5655.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Exxen Sports 5" group-title="TR: Spor",TR: Exxen Sports 5
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/5656.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Exxen Sports 6" group-title="TR: Spor",TR: Exxen Sports 6
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/5657.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Exxen Sports 7" group-title="TR: Spor",TR: Exxen Sports 7
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/67838.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Exxen Sports 8" group-title="TR: Spor",TR: Exxen Sports 8
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/67839.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Exxen Sports 9" group-title="TR: Spor",TR: Exxen Sports 9
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/94961.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Exxen Sports 10" group-title="TR: Spor",TR: Exxen Sports 10
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/94962.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: TRT 4K" group-title="TR: Ulusal",TR: TRT 4K
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/66.m3u8
+#EXTINF:-1 tvg-ID="670851cdfb601b5bdfec1859e344a245" user-agent="okhttp/4.10.0" tvg-name="TR: TRT 1" group-title="TR: Ulusal",TR: TRT 1
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/67.m3u8
+#EXTINF:-1 tvg-ID="17e2d12570a39381d9ed68183f62b2e3" user-agent="okhttp/4.10.0" tvg-name="TR: Star TV" group-title="TR: Ulusal",TR: Star TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/68.m3u8
+#EXTINF:-1 tvg-ID="9491324c2a811383f45ebcd4fc1f4ba6" user-agent="okhttp/4.10.0" tvg-name="TR: Kanal D" group-title="TR: Ulusal",TR: Kanal D
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/69.m3u8
+#EXTINF:-1 tvg-ID="132f024d4eddcae78c40bb83f9fda370" user-agent="okhttp/4.10.0" tvg-name="TR: Show TV" group-title="TR: Ulusal",TR: Show TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/70.m3u8
+#EXTINF:-1 tvg-ID="906a08ca86659b546a3e466411378b2b" user-agent="okhttp/4.10.0" tvg-name="TR: ATV" group-title="TR: Ulusal",TR: ATV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/71.m3u8
+#EXTINF:-1 tvg-ID="112e12399fd771cc3e58a3338cbb89e9" user-agent="okhttp/4.10.0" tvg-name="TR: TV8" group-title="TR: Ulusal",TR: TV8
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/72.m3u8
+#EXTINF:-1 tvg-ID="c29f578cde7464312b5cdbb8190f455c" user-agent="okhttp/4.10.0" tvg-name="TR: Now TV" group-title="TR: Ulusal",TR: Now TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/74.m3u8
+#EXTINF:-1 tvg-ID="9445db2ac5464228efce7a2f4108e8d1" user-agent="okhttp/4.10.0" tvg-name="TR: Kanal 7" group-title="TR: Ulusal",TR: Kanal 7
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/75.m3u8
+#EXTINF:-1 tvg-ID="97b7008b87e2c7ac709682d7f8bb083a" user-agent="okhttp/4.10.0" tvg-name="TR: Beyaz TV" group-title="TR: Ulusal",TR: Beyaz TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/76.m3u8
+#EXTINF:-1 tvg-ID="5b002ae9415f4beed31cc0fb4aa4395c" user-agent="okhttp/4.10.0" tvg-name="TR: Teve 2" group-title="TR: Ulusal",TR: Teve 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/77.m3u8
+#EXTINF:-1 tvg-ID="6c47bd14f11aad16b86b540b1583a7de" user-agent="okhttp/4.10.0" tvg-name="TR: A2" group-title="TR: Ulusal",TR: A2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/78.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: 360 TV" group-title="TR: Ulusal",TR: 360 TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: TV 5" group-title="TR: Ulusal",TR: TV 5
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/79.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: TV 8 Int" group-title="TR: Ulusal",TR: TV 8 Int
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/28438.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Show Turk" group-title="TR: Ulusal",TR: Show Turk
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/88.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Euro Star" group-title="TR: Ulusal",TR: Euro Star
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/84.m3u8
+#EXTINF:-1 tvg-ID="73bd1bae16e9efb9a893e0fa9ac7da3b" user-agent="okhttp/4.10.0" tvg-name="TR: Euro D" group-title="TR: Ulusal",TR: Euro D
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/81.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: ATV Avrupa" group-title="TR: Ulusal",TR: ATV Avrupa
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/93.m3u8
+#EXTINF:-1 tvg-ID="ad7d3a9eb4232bb47e46fae0aabd03e9" user-agent="okhttp/4.10.0" tvg-name="TR: TGRT EU" group-title="TR: Ulusal",TR: TGRT EU
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/85.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Kanal 7 EU" group-title="TR: Ulusal",TR: Kanal 7 EU
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/86.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Tivi 6" group-title="TR: Ulusal",TR: Tivi 6
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82723.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Showmax" group-title="TR: Ulusal",TR: Showmax
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/94.m3u8
+#EXTINF:-1 tvg-ID="2bafd40580691da8ec574118830ce8d8" user-agent="okhttp/4.10.0" tvg-name="TR: NTV" group-title="TR: Haber",TR: NTV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/182.m3u8
+#EXTINF:-1 tvg-ID="97c5f53f20b467ba02b65e72eb5d462b" user-agent="okhttp/4.10.0" tvg-name="TR: CNN Türk" group-title="TR: Haber",TR: CNN Türk
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/183.m3u8
+#EXTINF:-1 tvg-ID="f42860c4588d734f49dba5b13e8b623f" user-agent="okhttp/4.10.0" tvg-name="TR: Habertürk" group-title="TR: Haber",TR: Habertürk
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/185.m3u8
+#EXTINF:-1 tvg-ID="8e8591fcfbed1a001052e389593e96e7" user-agent="okhttp/4.10.0" tvg-name="TR: A Haber" group-title="TR: Haber",TR: A Haber
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/184.m3u8
+#EXTINF:-1 tvg-ID="7fa10161bdd4c243b3db2c5524bb159e" user-agent="okhttp/4.10.0" tvg-name="TR: A Para" group-title="TR: Haber",TR: A Para
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/200.m3u8
+#EXTINF:-1 tvg-ID="e547ac904dfc148981c58f8d839ecf62" user-agent="okhttp/4.10.0" tvg-name="TR: A News" group-title="TR: Haber",TR: A News
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/28437.m3u8
+#EXTINF:-1 tvg-ID="e0ce89d08567132903031646c3d57308" user-agent="okhttp/4.10.0" tvg-name="TR: 24 Haber" group-title="TR: Haber",TR: 24 Haber
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/186.m3u8
+#EXTINF:-1 tvg-ID="b22bb2e68b51608cfc2b4cb2933d8b28" user-agent="okhttp/4.10.0" tvg-name="TR: TRT Haber" group-title="TR: Haber",TR: TRT Haber
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/187.m3u8
+#EXTINF:-1 tvg-ID="a2ee876860f701b8e4eebab8fe067c16" user-agent="okhttp/4.10.0" tvg-name="TR: Flash Haber" group-title="TR: Haber",TR: Flash Haber
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/201.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Bengütürk" group-title="TR: Haber",TR: Bengütürk
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/117.m3u8
+#EXTINF:-1 tvg-ID="2f78cf70a1356837bc0b28628ce9ab92" user-agent="okhttp/4.10.0" tvg-name="TR: Bloomberg HT" group-title="TR: Haber",TR: Bloomberg HT
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/188.m3u8
+#EXTINF:-1 tvg-ID="2612b89b99d892352aebe01501c0bb58" user-agent="okhttp/4.10.0" tvg-name="TR: TV100" group-title="TR: Haber",TR: TV100
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/190.m3u8
+#EXTINF:-1 tvg-ID="8f139b5fac2b8432952548b4fd230693" user-agent="okhttp/4.10.0" tvg-name="TR: Tele 1" group-title="TR: Haber",TR: Tele 1
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/191.m3u8
+#EXTINF:-1 tvg-ID="3342bdb5a705ce2754176f8c11318944" user-agent="okhttp/4.10.0" tvg-name="TR: Sözcü TV" group-title="TR: Haber",TR: Sözcü TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/75546.m3u8
+#EXTINF:-1 tvg-ID="360b349e962c8612d7dfe387d6e317eb" user-agent="okhttp/4.10.0" tvg-name="TR: Halk TV" group-title="TR: Haber",TR: Halk TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/192.m3u8
+#EXTINF:-1 tvg-ID="00649a7847cbcb69284925ad0f07ace7" user-agent="okhttp/4.10.0" tvg-name="TR: Ulusal Kanal" group-title="TR: Haber",TR: Ulusal Kanal
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/189.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: BBC News" group-title="TR: Haber",TR: BBC News
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/94864.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: KRT" group-title="TR: Haber",TR: KRT
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/199.m3u8
+#EXTINF:-1 tvg-ID="869c2f96783d6aa7e9a167bd18edc204" user-agent="okhttp/4.10.0" tvg-name="TR: Ülke TV" group-title="TR: Haber",TR: Ülke TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/193.m3u8
+#EXTINF:-1 tvg-ID="293aa315a2b780712dba7ce0b099bc41" user-agent="okhttp/4.10.0" tvg-name="TR: TGRT Haber" group-title="TR: Haber",TR: TGRT Haber
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/194.m3u8
+#EXTINF:-1 tvg-ID="bc09dc4a916399edeef49589ecaa89d7" user-agent="okhttp/4.10.0" tvg-name="TR: Haber Global TV" group-title="TR: Haber",TR: Haber Global TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/195.m3u8
+#EXTINF:-1 tvg-ID="cfb5efac108f8e396ce71d634b40ef7a" user-agent="okhttp/4.10.0" tvg-name="TR: Lider Haber" group-title="TR: Haber",TR: Lider Haber
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82725.m3u8
+#EXTINF:-1 tvg-ID="fb1cde134da018657e467cb351a834db" user-agent="okhttp/4.10.0" tvg-name="TR: TVNET" group-title="TR: Haber",TR: TVNET
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/196.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Akit TV" group-title="TR: Haber",TR: Akit TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/109.m3u8
+#EXTINF:-1 tvg-ID="2567caf5c581d612ecf4dc0fa11056e7" user-agent="okhttp/4.10.0" tvg-name="TR: TH Türkhaber" group-title="TR: Haber",TR: TH Türkhaber
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/28439.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: FX" group-title="TR: Sinema",TR: FX
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/203.m3u8
+#EXTINF:-1 tvg-ID="c117ef9c9a8fb7ff6906de6a933e5357" user-agent="okhttp/4.10.0" tvg-name="TR: FilmScreen" group-title="TR: Sinema",TR: FilmScreen
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/83324.m3u8
+#EXTINF:-1 tvg-ID="03af2b48a64a44fcde46c86e3875df87" user-agent="okhttp/4.10.0" tvg-name="TR: Epic Drama" group-title="TR: Sinema",TR: Epic Drama
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/43970.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: BluTV Play 1" group-title="TR: Sinema",TR: BluTV Play 1
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/86056.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: BluTV Play 2" group-title="TR: Sinema",TR: BluTV Play 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/86057.m3u8
+#EXTINF:-1 tvg-ID="1a452d5515272cae7aca918d1d8eeb1e" user-agent="okhttp/4.10.0" tvg-name="TR: Dizi Smart Max" group-title="TR: Sinema",TR: Dizi Smart Max
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/206.m3u8
+#EXTINF:-1 tvg-ID="a91c20b05e4456d9a2cc425b28da2408" user-agent="okhttp/4.10.0" tvg-name="TR: Dizi Smart Premium" group-title="TR: Sinema",TR: Dizi Smart Premium
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/207.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: beIN Movies Türk" group-title="TR: Sinema",TR: beIN Movies Türk
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/212.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: beIN Movies Stars" group-title="TR: Sinema",TR: beIN Movies Stars
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/213.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: beIN Movies Premiere" group-title="TR: Sinema",TR: beIN Movies Premiere
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/93682.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: beIN Movies Premiere 2" group-title="TR: Sinema",TR: beIN Movies Premiere 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/93683.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: beIN Box Office" group-title="TR: Sinema",TR: beIN Box Office
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/93685.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: beIN H&E" group-title="TR: Sinema",TR: beIN H&E
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/93684.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: beIN Series 1" group-title="TR: Sinema",TR: beIN Series 1
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/217.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: beIN Series 2" group-title="TR: Sinema",TR: beIN Series 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/218.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: beIN Series 3" group-title="TR: Sinema",TR: beIN Series 3
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/87613.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: beIN Series 4" group-title="TR: Sinema",TR: beIN Series 4
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/87614.m3u8
+#EXTINF:-1 tvg-ID="2f03c6538b3bc92b2239cc5c515df857" user-agent="okhttp/4.10.0" tvg-name="TR: MovieSmart Classic" group-title="TR: Sinema",TR: MovieSmart Classic
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/219.m3u8
+#EXTINF:-1 tvg-ID="e84923968d7b627c7d48fb42d38ca7fc" user-agent="okhttp/4.10.0" tvg-name="TR: MovieSmart Türk" group-title="TR: Sinema",TR: MovieSmart Türk
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/222.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: BBC First" group-title="TR: Sinema",TR: BBC First
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/94865.m3u8
+#EXTINF:-1 tvg-ID="a132d6b03f0135533218870b78b4623a" user-agent="okhttp/4.10.0" tvg-name="TR: Sinema TV" group-title="TR: Sinema",TR: Sinema TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/223.m3u8
+#EXTINF:-1 tvg-ID="3045d059e95ed27add1dec73b579a6f3" user-agent="okhttp/4.10.0" tvg-name="TR: Sinema TV 2" group-title="TR: Sinema",TR: Sinema TV 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/224.m3u8
+#EXTINF:-1 tvg-ID="20fb38297f7d14d7c4375f37f54f1604" user-agent="okhttp/4.10.0" tvg-name="TR: Sinema TV 1001" group-title="TR: Sinema",TR: Sinema TV 1001
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/225.m3u8
+#EXTINF:-1 tvg-ID="7125f474a85e2658638b3aba32f16250" user-agent="okhttp/4.10.0" tvg-name="TR: Sinema TV 1002" group-title="TR: Sinema",TR: Sinema TV 1002
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/226.m3u8
+#EXTINF:-1 tvg-ID="546f6445af7ef08b59782b765a049730" user-agent="okhttp/4.10.0" tvg-name="TR: Sinema TV Aksiyon" group-title="TR: Sinema",TR: Sinema TV Aksiyon
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/227.m3u8
+#EXTINF:-1 tvg-ID="90d3f005879f71f8ea7f85b9534607b3" user-agent="okhttp/4.10.0" tvg-name="TR: Sinema TV Aksiyon 2" group-title="TR: Sinema",TR: Sinema TV Aksiyon 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/228.m3u8
+#EXTINF:-1 tvg-ID="aba3102ab0cc2d17d9e6626399db7a09" user-agent="okhttp/4.10.0" tvg-name="TR: Sinema TV Komedi" group-title="TR: Sinema",TR: Sinema TV Komedi
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/229.m3u8
+#EXTINF:-1 tvg-ID="7275d0a755270801d0d1efb2772e67dd" user-agent="okhttp/4.10.0" tvg-name="TR: Sinema TV Komedi 2" group-title="TR: Sinema",TR: Sinema TV Komedi 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/230.m3u8
+#EXTINF:-1 tvg-ID="671b2722278d5250b9f7436d3e96082d" user-agent="okhttp/4.10.0" tvg-name="TR: Sinema TV Aile" group-title="TR: Sinema",TR: Sinema TV Aile
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/231.m3u8
+#EXTINF:-1 tvg-ID="1fc85192ff6832ad1f842f3395c06248" user-agent="okhttp/4.10.0" tvg-name="TR: Sinema Aile 2" group-title="TR: Sinema",TR: Sinema Aile 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/232.m3u8
+#EXTINF:-1 tvg-ID="22d72d12562505a868b9e0a442f2c1d7" user-agent="okhttp/4.10.0" tvg-name="TR: Sinema TV Yerli" group-title="TR: Sinema",TR: Sinema TV Yerli
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/233.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Sinema TV Yerli 2" group-title="TR: Sinema",TR: Sinema TV Yerli 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82716.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Alfa Movies 1" group-title="TR: Sinema",TR: Alfa Movies 1
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/73559.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Alfa Movies 2" group-title="TR: Sinema",TR: Alfa Movies 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/73560.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Alfa Movies 3" group-title="TR: Sinema",TR: Alfa Movies 3
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/73561.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Alfa Movies 4" group-title="TR: Sinema",TR: Alfa Movies 4
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/73562.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Alfa Movies 5" group-title="TR: Sinema",TR: Alfa Movies 5
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/73563.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Alfa Movies 6" group-title="TR: Sinema",TR: Alfa Movies 6
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/73564.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Alfa Movies 7" group-title="TR: Sinema",TR: Alfa Movies 7
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/73565.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Alfa Movies 8" group-title="TR: Sinema",TR: Alfa Movies 8
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/73566.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Alfa Movies 9" group-title="TR: Sinema",TR: Alfa Movies 9
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/73567.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Alfa Movies 10" group-title="TR: Sinema",TR: Alfa Movies 10
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/73568.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Alfa Movies 11" group-title="TR: Sinema",TR: Alfa Movies 11
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/73569.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Alfa Movies 12" group-title="TR: Sinema",TR: Alfa Movies 12
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/73570.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Alfa Movies 13" group-title="TR: Sinema",TR: Alfa Movies 13
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/73571.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Alfa Movies 14" group-title="TR: Sinema",TR: Alfa Movies 14
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/73572.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Alfa Movies 15" group-title="TR: Sinema",TR: Alfa Movies 15
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/73573.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Alfa Movies 16" group-title="TR: Sinema",TR: Alfa Movies 16
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/73574.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Alfa Movies 17" group-title="TR: Sinema",TR: Alfa Movies 17
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/73575.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Alfa Movies 18" group-title="TR: Sinema",TR: Alfa Movies 18
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/73576.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Alfa Movies 19" group-title="TR: Sinema",TR: Alfa Movies 19
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/73577.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Alfa Movies 20" group-title="TR: Sinema",TR: Alfa Movies 20
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/73578.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Kemal Sunal TV" group-title="TR: Sinema",TR: Kemal Sunal TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/255.m3u8
+#EXTINF:-1 tvg-ID="d57a89993eccb2ec76d450fb7adac549" user-agent="okhttp/4.10.0" tvg-name="TR: ID" group-title="TR: Belgesel",TR: ID
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/268.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: beIN İZ" group-title="TR: Belgesel",TR: beIN İZ
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/256.m3u8
+#EXTINF:-1 tvg-ID="9f1add531be5bba29b6f29a0a81b8998" user-agent="okhttp/4.10.0" tvg-name="TR: National Geographic" group-title="TR: Belgesel",TR: National Geographic
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/257.m3u8
+#EXTINF:-1 tvg-ID="db183c2c0823bdb52ddcfe479445f752" user-agent="okhttp/4.10.0" tvg-name="TR: National Geographic Wild" group-title="TR: Belgesel",TR: National Geographic Wild
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/258.m3u8
+#EXTINF:-1 tvg-ID="3102c0d9f5f02c5d0359a2950632fbed" user-agent="okhttp/4.10.0" tvg-name="TR: BBC Earth" group-title="TR: Belgesel",TR: BBC Earth
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/259.m3u8
+#EXTINF:-1 tvg-ID="a47c77aceb13c1240850e38e39035a36" user-agent="okhttp/4.10.0" tvg-name="TR: Tarih TV" group-title="TR: Belgesel",TR: Tarih TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/67367.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: History" group-title="TR: Belgesel",TR: History
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/261.m3u8
+#EXTINF:-1 tvg-ID="f6d0856d554d8a0ffb2d2e6cdd4c11f7" user-agent="okhttp/4.10.0" tvg-name="TR: Viasat History" group-title="TR: Belgesel",TR: Viasat History
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/262.m3u8
+#EXTINF:-1 tvg-ID="d7fe438f9d4b825da7121db68736db9f" user-agent="okhttp/4.10.0" tvg-name="TR: Da Vinci Learning" group-title="TR: Belgesel",TR: Da Vinci Learning
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/265.m3u8
+#EXTINF:-1 tvg-ID="ad8172de5a72efbc211b56d56e400ecb" user-agent="okhttp/4.10.0" tvg-name="TR: Discovery Channel" group-title="TR: Belgesel",TR: Discovery Channel
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/266.m3u8
+#EXTINF:-1 tvg-ID="747faa45c476945dbe9412b86748d15c" user-agent="okhttp/4.10.0" tvg-name="TR: D-Max" group-title="TR: Belgesel",TR: D-Max
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/274.m3u8
+#EXTINF:-1 tvg-ID="503395f6e3769b79caa7f3b52216a6a0" user-agent="okhttp/4.10.0" tvg-name="TR: DocuScreen" group-title="TR: Belgesel",TR: DocuScreen
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/269.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Yaban TV" group-title="TR: Belgesel",TR: Yaban TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/272.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: TGRT Belgesel" group-title="TR: Belgesel",TR: TGRT Belgesel
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82726.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Love Nature" group-title="TR: Belgesel",TR: Love Nature
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/276.m3u8
+#EXTINF:-1 tvg-ID="5768d236ea2cc0aa27234c04eb4e359f" user-agent="okhttp/4.10.0" tvg-name="TR: TRT Belgesel" group-title="TR: Belgesel",TR: TRT Belgesel
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/278.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Çiftçi TV" group-title="TR: Belgesel",TR: Çiftçi TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/280.m3u8
+#EXTINF:-1 tvg-ID="56eb491e048400df1fa8af9cdb8fb56b" user-agent="okhttp/4.10.0" tvg-name="TR: Habitat" group-title="TR: Belgesel",TR: Habitat
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/281.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Viasat Explore" group-title="TR: Belgesel",TR: Viasat Explore
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/43971.m3u8
+#EXTINF:-1 tvg-ID="6630de770585fdef02c1ecc7836dd949" user-agent="okhttp/4.10.0" tvg-name="TR: Baby TV" group-title="TR: Çocuk",TR: Baby TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/282.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Duck TV" group-title="TR: Çocuk",TR: Duck TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82718.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Zarok TV" group-title="TR: Çocuk",TR: Zarok TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/28747.m3u8
+#EXTINF:-1 tvg-ID="921370ec04258814a1df960ca929f12b" user-agent="okhttp/4.10.0" tvg-name="TR: Minika Go" group-title="TR: Çocuk",TR: Minika Go
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/285.m3u8
+#EXTINF:-1 tvg-ID="15eee806f3cef252dbb19f92832f624e" user-agent="okhttp/4.10.0" tvg-name="TR: Minika Çocuk" group-title="TR: Çocuk",TR: Minika Çocuk
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/286.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Spacetoon" group-title="TR: Çocuk",TR: Spacetoon
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/93681.m3u8
+#EXTINF:-1 tvg-ID="f8369ce4e3dc8fbce277958abb34b7e4" user-agent="okhttp/4.10.0" tvg-name="TR: Disney Junior" group-title="TR: Çocuk",TR: Disney Junior
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/284.m3u8
+#EXTINF:-1 tvg-ID="faef79919627c52dc899187c532e46e3" user-agent="okhttp/4.10.0" tvg-name="TR: Cartoonito" group-title="TR: Çocuk",TR: Cartoonito
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/283.m3u8
+#EXTINF:-1 tvg-ID="2812dcd15ecdbf0a90c43e3a22bf795a" user-agent="okhttp/4.10.0" tvg-name="TR: Çocuk Smart" group-title="TR: Çocuk",TR: Çocuk Smart
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/287.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Cartoon Network" group-title="TR: Çocuk",TR: Cartoon Network
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82717.m3u8
+#EXTINF:-1 tvg-ID="2b881711c94651283fd8f563af62775f" user-agent="okhttp/4.10.0" tvg-name="TR: Nicktoons" group-title="TR: Çocuk",TR: Nicktoons
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/289.m3u8
+#EXTINF:-1 tvg-ID="fdfc0698723b32c151b7d7b7e6404612" user-agent="okhttp/4.10.0" tvg-name="TR: Nickelodeon" group-title="TR: Çocuk",TR: Nickelodeon
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/290.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Moonbug Kids TV" group-title="TR: Çocuk",TR: Moonbug Kids TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/288.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Nick Jr." group-title="TR: Çocuk",TR: Nick Jr.
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/292.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Azoomee" group-title="TR: Çocuk",TR: Azoomee
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/94970.m3u8
+#EXTINF:-1 tvg-ID="0e295ab8212f78abc29a434fd559d012" user-agent="okhttp/4.10.0" tvg-name="TR: TRT Çocuk" group-title="TR: Çocuk",TR: TRT Çocuk
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/293.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Carousel Tv" group-title="TR: Çocuk",TR: Carousel Tv
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/94866.m3u8
+#EXTINF:-1 tvg-ID="8e18bcf100ccbd77270629a28d185bd8" user-agent="okhttp/4.10.0" tvg-name="TR: Diyanet Çocuk" group-title="TR: Çocuk",TR: Diyanet Çocuk
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82719.m3u8
+#EXTINF:-1 tvg-ID="06c36c44c240c88242b7f32272c5dd8d" user-agent="okhttp/4.10.0" tvg-name="TR: NR1 Türk" group-title="TR: Müzik",TR: NR1 Türk
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/300.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Dream TV" group-title="TR: Müzik",TR: Dream TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/94972.m3u8
+#EXTINF:-1 tvg-ID="c8b0d7d6dd0f04991804723fa1cc0078" user-agent="okhttp/4.10.0" tvg-name="TR: Dream Türk" group-title="TR: Müzik",TR: Dream Türk
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/305.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Ekin Türk TV" group-title="TR: Müzik",TR: Ekin Türk TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/312.m3u8
+#EXTINF:-1 tvg-ID="950b3a4c99d3d4ab8adee2afd34cb45d" user-agent="okhttp/4.10.0" tvg-name="TR: TRT Müzik" group-title="TR: Müzik",TR: TRT Müzik
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/308.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: TMB TV" group-title="TR: Müzik",TR: TMB TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82789.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Power TV" group-title="TR: Müzik",TR: Power TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/86043.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Power Turk" group-title="TR: Müzik",TR: Power Turk
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/86044.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Power Dance" group-title="TR: Müzik",TR: Power Dance
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/86045.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Power Love" group-title="TR: Müzik",TR: Power Love
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/86046.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Power Akustik" group-title="TR: Müzik",TR: Power Akustik
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/86047.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Power Slow" group-title="TR: Müzik",TR: Power Slow
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/86048.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Power Taptaze" group-title="TR: Müzik",TR: Power Taptaze
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/86049.m3u8
+#EXTINF:-1 tvg-ID="68a35a5c3873227330914483a48b4cf8" user-agent="okhttp/4.10.0" tvg-name="TR: TLC" group-title="TR: Yaşam",TR: TLC
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/80.m3u8
+#EXTINF:-1 tvg-ID="d39f0da29005eafcb33b2bfd429a38bd" user-agent="okhttp/4.10.0" tvg-name="TR: CNBC-E" group-title="TR: Yaşam",TR: CNBC-E
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/84347.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Tabii TV" group-title="TR: Yaşam",TR: Tabii TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/88724.m3u8
+#EXTINF:-1 tvg-ID="ab33a4673a34b0c56100b3bafd796ae2" user-agent="okhttp/4.10.0" tvg-name="TR: Tivilife" group-title="TR: Yaşam",TR: Tivilife
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/74308.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: BKM 1 TV" group-title="TR: Yaşam",TR: BKM 1 TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/74309.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: BKM 2 TV" group-title="TR: Yaşam",TR: BKM 2 TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/74310.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Bi Kanal" group-title="TR: Yaşam",TR: Bi Kanal
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/93678.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: GZT TV" group-title="TR: Yaşam",TR: GZT TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/94969.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: English Club" group-title="TR: Yaşam",TR: English Club
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/93679.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Konuşanlar TV" group-title="TR: Yaşam",TR: Konuşanlar TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82794.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Konuşanlar Shots" group-title="TR: Yaşam",TR: Konuşanlar Shots
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82795.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: beIN Gurme" group-title="TR: Yaşam",TR: beIN Gurme
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/314.m3u8
+#EXTINF:-1 tvg-ID="7be83cde302ca0656afdd2e83264a05a" user-agent="okhttp/4.10.0" tvg-name="TR: TRT Türk" group-title="TR: Ulusal",TR: TRT Türk
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/83.m3u8
+#EXTINF:-1 tvg-ID="1c760f3c674abb6633685ba6a0251aaa" user-agent="okhttp/4.10.0" tvg-name="TR: TRT Avaz" group-title="TR: Yaşam",TR: TRT Avaz
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/316.m3u8
+#EXTINF:-1 tvg-ID="bf927c153dd04695d43ef3c6f42efb1e" user-agent="okhttp/4.10.0" tvg-name="TR: TRT 2" group-title="TR: Ulusal",TR: TRT 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/90.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: TRT EBA" group-title="TR: Yaşam",TR: TRT EBA
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/317.m3u8
+#EXTINF:-1 tvg-ID="601a154a03369c21fe08ef71eedf23fd" user-agent="okhttp/4.10.0" tvg-name="TR: TRT Kurdi" group-title="TR: Ulusal",TR: TRT Kurdi
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/87.m3u8
+#EXTINF:-1 tvg-ID="69f8666186fe05bce2d50d4937e47bd1" user-agent="okhttp/4.10.0" tvg-name="TR: TRT World" group-title="TR: Haber",TR: TRT World
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/197.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Tarım Orman TV" group-title="TR: Yaşam",TR: Tarım Orman TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/88964.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Fashion TV" group-title="TR: Yaşam",TR: Fashion TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/94971.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Naturescape" group-title="TR: Yaşam",TR: Naturescape
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/84004.m3u8
+#EXTINF:-1 tvg-ID="ca753ae91d69b58d9bf95271df183d5d" user-agent="okhttp/4.10.0" tvg-name="TR: Diyanet" group-title="TR: Ulusal",TR: Diyanet
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/89.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: FM TV" group-title="TR: Ulusal",TR: FM TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/166.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: VAV TV" group-title="TR: Yaşam",TR: VAV TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/318.m3u8
+#EXTINF:-1 tvg-ID="41086fba34f7d7f8ca2dccf9373a6011" user-agent="okhttp/4.10.0" tvg-name="TR: TRT Arabi" group-title="TR: Yaşam",TR: TRT Arabi
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/37755.m3u8
+#EXTINF:-1 tvg-ID="e85100ffedccd648c1e6aa9204fac439" user-agent="okhttp/4.10.0" tvg-name="TR: Semerkand" group-title="TR: Ulusal",TR: Semerkand
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/95.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Lalegül TV" group-title="TR: Ulusal",TR: Lalegül TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/98.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Al Zahra TV" group-title="TR: Yaşam",TR: Al Zahra TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82720.m3u8
+#EXTINF:-1 tvg-ID="fe822eaf62540987c4e30af02b733885" user-agent="okhttp/4.10.0" tvg-name="TR: Semerkand Way" group-title="TR: Yaşam",TR: Semerkand Way
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82722.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Kudüs TV" group-title="TR: Ulusal",TR: Kudüs TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/177.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Kabe Canlı" group-title="TR: Ulusal",TR: Kabe Canlı
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/178.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Çay TV" group-title="TR: Yerel",TR: Çay TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/104.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Mavi Karadeniz" group-title="TR: Yerel",TR: Mavi Karadeniz
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/102.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Kon TV" group-title="TR: Yerel",TR: Kon TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82727.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Kanal B" group-title="TR: Yerel",TR: Kanal B
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82728.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Dost TV" group-title="TR: Yerel",TR: Dost TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82729.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Meltem TV" group-title="TR: Yerel",TR: Meltem TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82730.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Aksu TV" group-title="TR: Yerel",TR: Aksu TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82731.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: BRT 1" group-title="TR: Yerel",TR: BRT 1
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82732.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: BRT 2" group-title="TR: Yerel",TR: BRT 2
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82733.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Kıbrıs TV" group-title="TR: Yerel",TR: Kıbrıs TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82735.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Kıbrıs Genç TV" group-title="TR: Yerel",TR: Kıbrıs Genç TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82736.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: GRT TV" group-title="TR: Yerel",TR: GRT TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82737.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: HRT TV" group-title="TR: Yerel",TR: HRT TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/93686.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: SUN RTV" group-title="TR: Yerel",TR: SUN RTV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82738.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Rumeli TV" group-title="TR: Yerel",TR: Rumeli TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82739.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Tek Rumeli" group-title="TR: Yerel",TR: Tek Rumeli
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82740.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Can TV" group-title="TR: Yerel",TR: Can TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82801.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Kanal 3" group-title="TR: Yerel",TR: Kanal 3
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82741.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Kanal 23" group-title="TR: Yerel",TR: Kanal 23
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82742.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Kanal 32" group-title="TR: Yerel",TR: Kanal 32
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82743.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Kanal 33" group-title="TR: Yerel",TR: Kanal 33
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82744.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: TV 1" group-title="TR: Yerel",TR: TV 1
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82746.m3u8
+#EXTINF:-1 tvg-ID="a02d40ef3bcbe8e03750cfaea0ff7077" user-agent="okhttp/4.10.0" tvg-name="TR: TV 4" group-title="TR: Yerel",TR: TV 4
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82747.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: TV 41" group-title="TR: Yerel",TR: TV 41
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82748.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: TV 42" group-title="TR: Yerel",TR: TV 42
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82749.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: TV 2020" group-title="TR: Yerel",TR: TV 2020
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82751.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: TV Kayseri" group-title="TR: Yerel",TR: TV Kayseri
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82753.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: On4 TV" group-title="TR: Yerel",TR: On4 TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82755.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Kanal Avrupa" group-title="TR: Yerel",TR: Kanal Avrupa
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82757.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Kanal Urfa" group-title="TR: Yerel",TR: Kanal Urfa
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82758.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: ES TV" group-title="TR: Yerel",TR: ES TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82759.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Güneydoğu TV" group-title="TR: Yerel",TR: Güneydoğu TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82761.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Diyar TV" group-title="TR: Yerel",TR: Diyar TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82762.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Ordu Altaş TV" group-title="TR: Yerel",TR: Ordu Altaş TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82763.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Kanal 58" group-title="TR: Yerel",TR: Kanal 58
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82764.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Mercan TV" group-title="TR: Yerel",TR: Mercan TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82766.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Kanal Fırat" group-title="TR: Yerel",TR: Kanal Fırat
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82767.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: BRTV Anadolu" group-title="TR: Yerel",TR: BRTV Anadolu
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82768.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Kanal 26" group-title="TR: Yerel",TR: Kanal 26
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82769.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Kanal V" group-title="TR: Yerel",TR: Kanal V
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82770.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Ekotürk TV" group-title="TR: Yerel",TR: Ekotürk TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82772.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Ekol TV" group-title="TR: Yerel",TR: Ekol TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82774.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Agro TV" group-title="TR: Yerel",TR: Agro TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82775.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Gözde TV" group-title="TR: Yerel",TR: Gözde TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82778.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Koza TV" group-title="TR: Yerel",TR: Koza TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82779.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: TVDEN" group-title="TR: Yerel",TR: TVDEN
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82780.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: ER TV" group-title="TR: Yerel",TR: ER TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82781.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Tempo TV" group-title="TR: Yerel",TR: Tempo TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82782.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: A Vuslat TV" group-title="TR: Yerel",TR: A Vuslat TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82784.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Edessa TV" group-title="TR: Yerel",TR: Edessa TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82785.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Line TV" group-title="TR: Yerel",TR: Line TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82787.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Rehber TV" group-title="TR: Yerel",TR: Rehber TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82788.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Köy TV" group-title="TR: Yerel",TR: Köy TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82790.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Kardelen TV" group-title="TR: Yerel",TR: Kardelen TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/82791.m3u8
+#EXTINF:-1 tvg-ID="" user-agent="okhttp/4.10.0" tvg-name="TR: Kadırga TV" group-title="TR: Yerel",TR: Kadırga TV
+http://s96.b67h76.com:80/live/k67c16f38f65/u29x16082021/107.m3u8
+`;
+
+/* ===============================
+   EXTINF PARSER + KATEGORİ
+================================ */
+function parseM3U(text){
+  const lines = text.split(/\r?\n/);
+  const channels = [];
+  for(let i=0;i<lines.length;i++){
+    if(lines[i].startsWith("#EXTINF")){
+      const name = lines[i].split(",").pop().trim();
+      const groupMatch = lines[i].match(/group-title="([^"]+)"/);
+      const category = groupMatch ? groupMatch[1].replace("TR:","").trim() : "Genel";
+      const url = lines[i+1]?.trim();
+      if(url && url.startsWith("http")){
+        channels.push({ name, icon:"📡", url, category });
+      }
+    }
+  }
+  return channels;
+}
+
+const IPTV_CHANNELS = parseM3U(IPTV_M3U_RAW);
+let activeCategory = "Tümü";
+
+/* ===============================
+   UI
+================================ */
+function showTab(tab){
+  document.getElementById("national").style.display = tab==="national"?"grid":"none";
+  document.getElementById("iptv").style.display = tab==="iptv"?"block":"none";
+  document.querySelectorAll("nav button").forEach(b=>b.classList.remove("active"));
+  event.target.classList.add("active");
+}
+
+function renderNational(){
+  renderGrid(NATIONAL_CHANNELS, document.getElementById("national"));
+}
+
+function renderIPTV(){
+  const grid = document.getElementById("iptvGrid");
+  const list = activeCategory==="Tümü"
+    ? IPTV_CHANNELS
+    : IPTV_CHANNELS.filter(c=>c.category===activeCategory);
+  renderGrid(list, grid);
+}
+
+function renderGrid(list, el){
+  el.innerHTML="";
+  list.forEach(ch=>{
+    const c=document.createElement("div");
+    c.className="card";
+    c.innerHTML=`<span>${ch.icon}</span><div>${ch.name}</div>`;
+    c.onclick=()=>playStream(ch.url);
+    el.appendChild(c);
+  });
+}
+
+function renderCategories(){
+  const bar=document.getElementById("categoryBar");
+  const cats=["Tümü",...new Set(IPTV_CHANNELS.map(c=>c.category))];
+  bar.innerHTML="";
+  cats.forEach(cat=>{
+    const b=document.createElement("button");
+    b.textContent=cat;
+    if(cat===activeCategory) b.classList.add("active");
+    b.onclick=()=>{
+      activeCategory=cat;
+      renderCategories();
+      renderIPTV();
+    };
+    bar.appendChild(b);
+  });
+}
+
+/* ===============================
+   PLAYER – VERCEL PROXY (AYNI)
+================================ */
+let hls;
+
+function proxied(url){
+  return "/api/proxy?url=" + encodeURIComponent(url);
+}
+
+function playStream(url){
+  document.getElementById("playerOverlay").style.display="flex";
+  const body=document.getElementById("playerBody");
+  body.innerHTML="";
+
+  const video=document.createElement("video");
+  video.controls=true;
+  video.autoplay=true;
+  video.playsInline=true;
+  body.appendChild(video);
+
+  if (Hls.isSupported()){
+    hls=new Hls({ lowLatencyMode:true, backBufferLength:30, maxBufferLength:60 });
+    hls.loadSource(proxied(url));
+    hls.attachMedia(video);
+  } else {
+    video.src = proxied(url);
+  }
+}
+
+function closePlayer(){
+  if(hls){hls.destroy();hls=null;}
+  document.getElementById("playerOverlay").style.display="none";
+}
+
+/* INIT */
+renderNational();
+renderCategories();
+renderIPTV();
+</script>
+
+</body>
+</html>
